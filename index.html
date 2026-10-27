@@ -47,7 +47,7 @@ footer{text-align:center;color:#999;font-size:13px;padding:10px 0 34px}
 footer p{margin:4px 0}
 </style>
 <script>window._AMapSecurityConfig={securityJsCode:"91a7e2c9fa3313873b5531a5dde273a8"};</script>
-<script src="https://webapi.amap.com/maps?v=2.0&key=39abf1fcc05cf446e4466a623fc19c62&plugin=AMap.Geocoder,AMap.PlaceSearch,AMap.AutoComplete"></script>
+<script src="https://webapi.amap.com/maps?v=2.0&key=39abf1fcc05cf446e4466a623fc19c62&plugin=AMap.Geocoder,AMap.PlaceSearch"></script>
 </head>
 <body>
 <header>
@@ -58,7 +58,7 @@ footer p{margin:4px 0}
 
 <section class="card tool" id="score-tool">
 <h2>金水区地址打分</h2>
-<p class="hint">输入金水区某个位置 → 按蜜雪冰城平价档 v0.1 打分（限定郑州金水区；周边 500 米）</p>
+<p class="hint">输入金水区某个位置 → 按蜜雪冰城平价档 v0.1 打分（限定郑州金水区；周边 500 米；同品牌按「周边蜜雪数量」统计）</p>
 <div class="row">
 <input type="text" id="addr" placeholder="例如：郑州金水区花园路某某路口" autocomplete="off">
 <button type="button" id="btn">开始打分</button>
@@ -178,8 +178,19 @@ footer p{margin:4px 0}
     statusEl.textContent = msg || '';
     statusEl.className = 'status ' + (isErr ? 'err' : 'info');
   }
-
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
   function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+  function errInfo(result, status){
+    if (result == null) return String(status || '未知错误');
+    if (typeof result === 'string') return result;
+    if (typeof result === 'object'){
+      return String(result.info || result.message || result.infocode || status || 'error');
+    }
+    return String(status || 'error');
+  }
+  function isQps(msg){
+    return /CUQPS_HAS_EXCEEDED|OVER_LIMIT|QPS|并发|频率/i.test(String(msg||''));
+  }
 
   function tierOf(score){
     if (score >= 85) return {label:'优先考虑', cls:'g1'};
@@ -187,7 +198,6 @@ footer p{margin:4px 0}
     if (score >= 55) return {label:'谨慎', cls:'g3'};
     return {label:'不建议', cls:'g4'};
   }
-
   function schoolDelta(n){
     if (n <= 0) return 0;
     if (n <= 5) return 10;
@@ -255,21 +265,21 @@ footer p{margin:4px 0}
     document.getElementById('matchedAddr').textContent = '匹配：' + addrText;
     var tb = document.getElementById('breakTable');
     tb.innerHTML = '<tr><th>因子</th><th>计数</th><th>加减分</th></tr>';
+    var tr0 = document.createElement('tr');
+    tr0.innerHTML = '<td><b>基础分</b></td><td></td><td>50</td>';
+    tb.appendChild(tr0);
     r.parts.forEach(function(p){
       var tr = document.createElement('tr');
       tr.innerHTML = '<td>'+p[0]+'</td><td>'+p[1]+'</td><td>'+fmtDelta(p[2])+'</td>';
       tb.appendChild(tr);
     });
-    var tr = document.createElement('tr');
-    tr.innerHTML = '<td><b>基础分</b></td><td></td><td>50</td>';
-    tb.insertBefore(tr, tb.children[1]);
     var tr2 = document.createElement('tr');
     tr2.innerHTML = '<td><b>总分</b></td><td></td><td><b>'+r.score+'</b></td>';
     tb.appendChild(tr2);
     resultEl.classList.add('show');
   }
 
-  function searchAround(center, type, keywords){
+  function searchAroundOnce(center, type, keywords){
     return new Promise(function(resolve, reject){
       var ps = new AMap.PlaceSearch({
         city: '郑州',
@@ -285,26 +295,41 @@ footer p{margin:4px 0}
         } else if (status === 'no_data'){
           resolve([]);
         } else {
-          var info = (result && (result.info || result.message)) || status || '周边检索失败';
-          reject(new Error(String(info)));
+          reject(new Error(errInfo(result, status)));
         }
       });
     });
   }
 
-  function isJinshui(regeocodeOrPoi){
+  async function searchAround(center, type, keywords, label){
+    var last = null;
+    for (var attempt = 0; attempt < 4; attempt++){
+      try {
+        if (attempt) await sleep(400 * attempt);
+        return await searchAroundOnce(center, type, keywords);
+      } catch (e){
+        last = e;
+        if (!isQps(e && e.message) || attempt === 3) throw e;
+        setStatus('接口繁忙，重试中…（' + (label || '') + '）');
+      }
+    }
+    throw last || new Error('周边检索失败');
+  }
+
+  function isJinshui(obj){
     var district = '';
     var adcode = '';
     var address = '';
-    if (regeocodeOrPoi.addressComponent){
-      var ac = regeocodeOrPoi.addressComponent;
-      district = ac.district || ac.township || '';
+    if (!obj) return false;
+    if (obj.addressComponent){
+      var ac = obj.addressComponent;
+      district = ac.district || '';
       adcode = String(ac.adcode || '');
-      address = (regeocodeOrPoi.formattedAddress || '') + district;
+      address = (obj.formattedAddress || '') + district;
     } else {
-      district = regeocodeOrPoi.adname || regeocodeOrPoi.district || '';
-      adcode = String(regeocodeOrPoi.adcode || '');
-      address = (regeocodeOrPoi.address || '') + (regeocodeOrPoi.name || '') + district;
+      district = obj.adname || obj.district || '';
+      adcode = String(obj.adcode || '');
+      address = (obj.formattedAddress || obj.address || '') + (obj.name || '') + district;
     }
     if (adcode.indexOf('410105') === 0) return true;
     if (district.indexOf('金水') >= 0) return true;
@@ -324,11 +349,10 @@ footer p{margin:4px 0}
         ps.search(query, function(st2, res2){
           if (st2 === 'complete' && res2 && res2.poiList && res2.poiList.pois && res2.poiList.pois.length){
             resolve({kind:'poi', list: res2.poiList.pois});
-          } else if (st2 === 'no_data' || (status === 'no_data')){
+          } else if (st2 === 'no_data' || status === 'no_data'){
             reject(new Error('未找到该地址，请换个金水区地点再试'));
           } else {
-            var info = (res2 && (res2.info || res2.message)) || (result && (result.info || result.message)) || st2 || status || '定位失败';
-            reject(new Error(String(info)));
+            reject(new Error(errInfo(res2, st2) || errInfo(result, status) || '定位失败'));
           }
         });
       });
@@ -341,28 +365,29 @@ footer p{margin:4px 0}
       var item = list[i];
       if (payload.kind === 'geocode'){
         var loc = item.location;
+        if (!loc) continue;
         var addr = item.formattedAddress || item.address || '';
         var ac = item.addressComponent || {};
+        // AMap may put district on the geocode itself
+        if (!ac.district && item.district) ac.district = item.district;
+        if (!ac.adcode && item.adcode) ac.adcode = item.adcode;
         var fake = {
           addressComponent: ac,
           formattedAddress: addr,
-          adname: ac.district,
-          adcode: ac.adcode
+          district: ac.district || item.district,
+          adcode: ac.adcode || item.adcode
         };
         if (isJinshui(fake) || addr.indexOf('金水') >= 0){
           return {
-            lng: loc.lng, lat: loc.lat,
             name: addr,
             center: [loc.lng, loc.lat]
           };
         }
       } else {
-        if (isJinshui(item)){
-          var loc2 = item.location;
+        if (isJinshui(item) && item.location){
           return {
-            lng: loc2.lng, lat: loc2.lat,
             name: (item.name || '') + (item.address ? '（'+item.address+'）' : ''),
-            center: [loc2.lng, loc2.lat]
+            center: [item.location.lng, item.location.lat]
           };
         }
       }
@@ -403,10 +428,44 @@ footer p{margin:4px 0}
   function mixueCount(pois){
     var n = 0;
     (pois || []).forEach(function(p){
-      var name = p.name || '';
-      if (name.indexOf('蜜雪') >= 0) n++;
+      if ((p.name || '').indexOf('蜜雪') >= 0) n++;
     });
     return n;
+  }
+
+  async function runAround(center){
+    // Sequential to stay under free-tier QPS
+    var school = await searchAround(center, '141200', '', '学校');
+    await sleep(180);
+    var residential = await searchAround(center, '120000', '', '住宅');
+    await sleep(180);
+    var office = await searchAround(center, '120200', '', '写字楼');
+    await sleep(180);
+    var market = await searchAround(center, '060700', '', '菜市场');
+    await sleep(180);
+    var metro = await searchAround(center, '150500', '', '地铁');
+    await sleep(180);
+    var mall = await searchAround(center, '060100', '', '商场');
+    await sleep(180);
+    var mixue = await searchAround(center, '', '蜜雪冰城', '同品牌');
+    await sleep(180);
+    var rivals = [];
+    var brands = ['茶百道','沪上阿姨','霸王茶姬','喜茶','书亦烧仙草'];
+    for (var i = 0; i < brands.length; i++){
+      var part = await searchAround(center, '', brands[i], brands[i]);
+      rivals = rivals.concat(part);
+      await sleep(180);
+    }
+    return {
+      school: school.length,
+      residential: residential.length,
+      office: office.length,
+      market: market.length,
+      metro: metro.length,
+      mall: mall.length,
+      mixue: mixueCount(mixue),
+      rival: rivalCount(rivals)
+    };
   }
 
   async function scoreAddress(){
@@ -423,46 +482,19 @@ footer p{margin:4px 0}
       var picked = pickJinshui(payload);
       if (!picked){
         setStatus('该位置不在郑州金水区，已拒绝打分。请输入金水区内地址。', true);
-        btn.disabled = false;
         return;
       }
       setStatus('检索周边设施（500米）…');
-      var center = picked.center;
-      showMap(center);
-
-      var tasks = [
-        searchAround(center, '141200', ''),
-        searchAround(center, '120000', ''),
-        searchAround(center, '120200', ''),
-        searchAround(center, '060700', ''),
-        searchAround(center, '150500', ''),
-        searchAround(center, '060100', ''),
-        searchAround(center, '', '蜜雪冰城'),
-        searchAround(center, '', '茶百道'),
-        searchAround(center, '', '沪上阿姨'),
-        searchAround(center, '', '霸王茶姬'),
-        searchAround(center, '', '喜茶'),
-        searchAround(center, '', '书亦烧仙草')
-      ];
-      var results = await Promise.all(tasks);
-      var counts = {
-        school: results[0].length,
-        residential: results[1].length,
-        office: results[2].length,
-        market: results[3].length,
-        metro: results[4].length,
-        mall: results[5].length,
-        mixue: mixueCount(results[6]),
-        rival: rivalCount([].concat(results[7], results[8], results[9], results[10], results[11]))
-      };
+      showMap(picked.center);
+      var counts = await runAround(picked.center);
       showResult(picked.name, counts);
       setStatus('打分完成（周边统计受单页约25条上限影响，仅供参考）');
     } catch (e){
       var msg = (e && e.message) ? e.message : String(e);
       if (/INVALID_USER_KEY|USERKEY_PLAT_NOMATCH|INVALID_USER_SCODE|USERKEY_PLAT/i.test(msg)){
         setStatus('高德 Key / 平台或域名白名单未生效（'+msg+'）。请到控制台核对 Web端(JS API) Key 与安全密钥、域名 dannywang0822.github.io', true);
-      } else if (/DAILY_QUERY_OVER_LIMIT|OVER_LIMIT|CUQPS_HAS_EXCEEDED|配额/i.test(msg)){
-        setStatus('高德调用配额已用尽，请稍后再试', true);
+      } else if (isQps(msg) || /DAILY_QUERY_OVER_LIMIT|配额/i.test(msg)){
+        setStatus('高德调用过于频繁或配额已用尽，请稍后再试（'+msg+'）', true);
       } else if (/NETWORK|timeout|Failed to fetch|网络/i.test(msg)){
         setStatus('网络异常，请稍后重试', true);
       } else {
