@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>郑州奶茶店选址工具 · 逻辑与验证进展（2026-10-27）</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f1ec;color:#222;font:15px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+header{padding:28px 18px 8px;max-width:720px;margin:0 auto}
+header h1{font-size:20px;line-height:1.4;margin:0}
+header p{margin:6px 0 0;color:#777;font-size:13px}
+main{max-width:720px;margin:0 auto;padding:8px 14px 24px}
+.card{background:#fff;border-radius:14px;padding:18px 16px;margin:14px 0;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.card h2{font-size:16px;margin:0 0 10px;color:#8a4b1f}
+.card h2 span{display:inline-block;background:#8a4b1f;color:#fff;border-radius:50%;width:22px;height:22px;line-height:22px;text-align:center;font-size:13px;margin-right:6px}
+.card p{margin:6px 0}
+ul{padding-left:20px;margin:6px 0}
+li{margin:4px 0}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin:8px 0}
+th,td{border-bottom:1px solid #eee;padding:7px 6px;text-align:left;vertical-align:top}
+th{background:#faf6f1;font-weight:600;white-space:nowrap}
+.note{color:#777;font-size:13px}
+.big{display:flex;gap:8px;margin:10px 0}
+.big div{flex:1;background:#faf6f1;border-radius:10px;padding:12px 6px;text-align:center}
+.big b{display:block;font-size:26px;color:#c0392b;line-height:1.2}
+.big small{color:#666;font-size:12px}
+.tag{display:inline-block;border-radius:4px;padding:0 6px;font-size:12px;color:#fff;white-space:nowrap}
+.g1{background:#2e8b57}.g2{background:#d4a017}.g3{background:#e67e22}.g4{background:#c0392b}
+.warn{border-left:4px solid #e67e22}
+footer{text-align:center;color:#999;font-size:13px;padding:10px 0 34px}
+</style>
+</head>
+<body>
+<header>
+<h1>郑州奶茶店选址工具 · 逻辑与验证进展（2026-10-27）</h1>
+<p>当前阶段：逻辑梳理和验证</p>
+</header>
+<main>
+
+<section class="card">
+<h2><span>1</span>项目目标</h2>
+<p>给具体地址打分，判断适不适合开某品牌奶茶店（甲），之后扩成区域找候选点位（乙）。</p>
+<p>先自用，将来可能对外；试点：郑州 + 奶茶；目前处于逻辑梳理和验证阶段。</p>
+</section>
+
+<section class="card">
+<h2><span>2</span>试点品牌（按价格带各取代表）</h2>
+<table>
+<tr><th>价格带</th><th>代表品牌</th></tr>
+<tr><td>平价</td><td>蜜雪冰城（郑州约800家）</td></tr>
+<tr><td>中价</td><td>茶百道、沪上阿姨</td></tr>
+<tr><td>中高价</td><td>霸王茶姬（郑州门店数待核实）</td></tr>
+<tr><td>高价</td><td>喜茶（郑州样本太少，只作个案）</td></tr>
+</table>
+<p class="note">古茗在郑州门店少，已剔除。</p>
+</section>
+
+<section class="card">
+<h2><span>3</span>蜜雪冰城平价档 v0.1 打分规则</h2>
+<p>基础分 <b>50</b>，最后夹到 0–100。以下均为 500 米范围内。</p>
+<table>
+<tr><th>因子</th><th>规则</th></tr>
+<tr><td>学校</td><td>0所 +0；1–5所 +10；6–10所 +18；11所及以上 +25</td></tr>
+<tr><td>住宅／写字楼／菜市场</td><td>数量≥10记为“密”：住宅密 +8，写字楼密 +4，菜市场密 +3，合计最多 +15；三项都疏 −5</td></tr>
+<tr><td>地铁站</td><td>有 +8；没有不扣</td></tr>
+<tr><td>商场</td><td>有 +5；没有不扣</td></tr>
+<tr><td>同品牌（其他蜜雪）</td><td>0–1家 0；2–3家 −4；4–5家 −8；6家及以上 −12</td></tr>
+<tr><td>竞品（茶百道、沪上阿姨、霸王茶姬、喜茶、书亦）</td><td>1–3家 +5；4–6家 0；7家及以上 −10</td></tr>
+</table>
+<table>
+<tr><th>档位</th><th>分数</th></tr>
+<tr><td><span class="tag g1">优先考虑</span></td><td>≥85</td></tr>
+<tr><td><span class="tag g2">可谈</span></td><td>70–84</td></tr>
+<tr><td><span class="tag g3">谨慎</span></td><td>55–69</td></tr>
+<tr><td><span class="tag g4">不建议</span></td><td>&lt;55</td></tr>
+</table>
+</section>
+
+<section class="card">
+<h2><span>4</span>验证结果（金水区，留出验证）</h2>
+<p>30家未参与定权重的真实蜜雪门店 vs 30个“建成区但300米内无蜜雪”的随机对照点。</p>
+<div class="big">
+<div><b>0.76</b><small>AUC<br>（0.5纯猜，1完美，误差约±0.07）</small></div>
+<div><b>85.6 / 76.2</b><small>平均分<br>门店 / 对照点</small></div>
+<div><b>16 / 8</b><small>85分以上家数<br>门店 / 对照点</small></div>
+</div>
+<p class="note">样本小，误差约±0.07。</p>
+<table>
+<tr><th>500米内平均值</th><th>门店</th><th>对照点</th></tr>
+<tr><td>学校</td><td>8</td><td>5.8</td></tr>
+<tr><td>菜市场</td><td>16.8</td><td>11.7</td></tr>
+<tr><td>地铁</td><td>3.2</td><td>2.2</td></tr>
+<tr><td>住宅</td><td>21.7</td><td>19.1</td></tr>
+<tr><td>写字楼</td><td>7.9</td><td>6.1</td></tr>
+<tr><td>同品牌</td><td>1.6</td><td>1.6</td></tr>
+<tr><td>商场</td><td>1</td><td>1</td></tr>
+</table>
+<p><b>结论：</b>学校、菜市场、地铁区分力较强；同品牌和商场几乎无区分力（同品牌这项是对照点设计造成，测不出真实效果）。</p>
+</section>
+
+<section class="card warn">
+<h2><span>5</span>局限与风险</h2>
+<ul>
+<li>样本小（30对30）</li>
+<li>对照点不等于“坏位置”，也可能是还没开店的好位置</li>
+<li>住宅、菜市场等经常顶到接口单页25条上限，数量被压低</li>
+<li>暂无关店／未开店对照数据</li>
+<li>数据来自高德地图开放平台，条款禁止存储原始POI数据，自用只保留汇总特征，将来对外需企业认证和商业授权</li>
+</ul>
+</section>
+
+<section class="card">
+<h2><span>6</span>下一步</h2>
+<ul>
+<li>加大样本重测并翻页</li>
+<li>补关店数据来源</li>
+<li>扩到茶百道、沪上阿姨及其他区</li>
+</ul>
+</section>
+
+</main>
+<footer>自用研究，数据仅供参考</footer>
+</body>
+</html>
