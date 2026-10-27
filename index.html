@@ -21,15 +21,33 @@ table{width:100%;border-collapse:collapse;font-size:13.5px;margin:8px 0}
 th,td{border-bottom:1px solid #eee;padding:7px 6px;text-align:left;vertical-align:top}
 th{background:#faf6f1;font-weight:600;white-space:nowrap}
 .note{color:#777;font-size:13px}
-.big{display:flex;gap:8px;margin:10px 0}
-.big div{flex:1;background:#faf6f1;border-radius:10px;padding:12px 6px;text-align:center}
+.big{display:flex;gap:8px;margin:10px 0;flex-wrap:wrap}
+.big div{flex:1;min-width:90px;background:#faf6f1;border-radius:10px;padding:12px 6px;text-align:center}
 .big b{display:block;font-size:26px;color:#c0392b;line-height:1.2}
 .big small{color:#666;font-size:12px}
 .tag{display:inline-block;border-radius:4px;padding:0 6px;font-size:12px;color:#fff;white-space:nowrap}
 .g1{background:#2e8b57}.g2{background:#d4a017}.g3{background:#e67e22}.g4{background:#c0392b}
 .warn{border-left:4px solid #e67e22}
+.tool{border:1px solid #e8d5c0}
+.tool .row{display:flex;gap:8px;margin:10px 0;flex-wrap:wrap}
+.tool input[type=text]{flex:1;min-width:160px;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:15px}
+.tool button{padding:10px 16px;border:0;border-radius:8px;background:#8a4b1f;color:#fff;font-size:15px;cursor:pointer}
+.tool button:disabled{opacity:.55;cursor:not-allowed}
+.tool .hint{color:#888;font-size:12.5px;margin:0 0 6px}
+.status{min-height:1.4em;font-size:13.5px;margin:6px 0}
+.status.err{color:#c0392b}
+.status.info{color:#555}
+.result{display:none;margin-top:10px}
+.result.show{display:block}
+.scoreline{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:8px 0}
+.scoreline .num{font-size:36px;font-weight:700;color:#c0392b;line-height:1}
+.break th:last-child,.break td:last-child{text-align:right}
+#map{width:100%;height:180px;border-radius:10px;margin-top:10px;background:#eee;display:none}
 footer{text-align:center;color:#999;font-size:13px;padding:10px 0 34px}
+footer p{margin:4px 0}
 </style>
+<script>window._AMapSecurityConfig={securityJsCode:"91a7e2c9fa3313873b5531a5dde273a8"};</script>
+<script src="https://webapi.amap.com/maps?v=2.0&key=39abf1fcc05cf446e4466a623fc19c62&plugin=AMap.Geocoder,AMap.PlaceSearch,AMap.AutoComplete"></script>
 </head>
 <body>
 <header>
@@ -37,6 +55,27 @@ footer{text-align:center;color:#999;font-size:13px;padding:10px 0 34px}
 <p>当前阶段：逻辑梳理和验证</p>
 </header>
 <main>
+
+<section class="card tool" id="score-tool">
+<h2>金水区地址打分</h2>
+<p class="hint">输入金水区某个位置 → 按蜜雪冰城平价档 v0.1 打分（限定郑州金水区；周边 500 米）</p>
+<div class="row">
+<input type="text" id="addr" placeholder="例如：郑州金水区花园路某某路口" autocomplete="off">
+<button type="button" id="btn">开始打分</button>
+</div>
+<div class="status info" id="status"></div>
+<div class="result" id="result">
+<div class="scoreline">
+<span class="num" id="scoreNum">—</span>
+<span id="tierTag"></span>
+</div>
+<p class="note" id="matchedAddr"></p>
+<table class="break" id="breakTable">
+<tr><th>因子</th><th>计数</th><th>加减分</th></tr>
+</table>
+<div id="map"></div>
+</div>
+</section>
 
 <section class="card">
 <h2><span>1</span>项目目标</h2>
@@ -120,6 +159,325 @@ footer{text-align:center;color:#999;font-size:13px;padding:10px 0 34px}
 </section>
 
 </main>
-<footer>自用研究，数据仅供参考</footer>
+<footer>
+<p>自用研究，数据仅供参考</p>
+<p>打分实时调用高德，结果仅供参考</p>
+</footer>
+
+<script>
+(function(){
+  var btn = document.getElementById('btn');
+  var input = document.getElementById('addr');
+  var statusEl = document.getElementById('status');
+  var resultEl = document.getElementById('result');
+  var mapEl = document.getElementById('map');
+  var map = null;
+  var marker = null;
+
+  function setStatus(msg, isErr){
+    statusEl.textContent = msg || '';
+    statusEl.className = 'status ' + (isErr ? 'err' : 'info');
+  }
+
+  function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+
+  function tierOf(score){
+    if (score >= 85) return {label:'优先考虑', cls:'g1'};
+    if (score >= 70) return {label:'可谈', cls:'g2'};
+    if (score >= 55) return {label:'谨慎', cls:'g3'};
+    return {label:'不建议', cls:'g4'};
+  }
+
+  function schoolDelta(n){
+    if (n <= 0) return 0;
+    if (n <= 5) return 10;
+    if (n <= 10) return 18;
+    return 25;
+  }
+  function mixueDelta(n){
+    if (n <= 1) return 0;
+    if (n <= 3) return -4;
+    if (n <= 5) return -8;
+    return -12;
+  }
+  function rivalDelta(n){
+    if (n <= 0) return 0;
+    if (n <= 3) return 5;
+    if (n <= 6) return 0;
+    return -10;
+  }
+
+  function computeScore(c){
+    var parts = [];
+    var score = 50;
+    var s = schoolDelta(c.school);
+    score += s; parts.push(['学校', c.school, s]);
+
+    var denseR = c.residential >= 10;
+    var denseO = c.office >= 10;
+    var denseM = c.market >= 10;
+    var denseness = 0;
+    if (denseR) denseness += 8;
+    if (denseO) denseness += 4;
+    if (denseM) denseness += 3;
+    denseness = Math.min(15, denseness);
+    if (!denseR && !denseO && !denseM) denseness = -5;
+    var densLabel = (denseR?'住宅密 ':'') + (denseO?'写字楼密 ':'') + (denseM?'菜市场密 ':'');
+    if (!denseR && !denseO && !denseM) densLabel = '三项都疏';
+    score += denseness;
+    parts.push(['住宅/写字楼/菜市场 (' + densLabel.trim() + ')',
+      '住'+c.residential+'/写'+c.office+'/菜'+c.market, denseness]);
+
+    var metro = c.metro > 0 ? 8 : 0;
+    score += metro; parts.push(['地铁站', c.metro, metro]);
+    var mall = c.mall > 0 ? 5 : 0;
+    score += mall; parts.push(['商场', c.mall, mall]);
+
+    var mx = mixueDelta(c.mixue);
+    score += mx; parts.push(['同品牌（周边蜜雪数量）', c.mixue, mx]);
+    var rv = rivalDelta(c.rival);
+    score += rv; parts.push(['竞品合计', c.rival, rv]);
+
+    score = clamp(score, 0, 100);
+    return {score: score, parts: parts};
+  }
+
+  function fmtDelta(d){
+    if (d > 0) return '+' + d;
+    return String(d);
+  }
+
+  function showResult(addrText, counts){
+    var r = computeScore(counts);
+    document.getElementById('scoreNum').textContent = r.score;
+    var t = tierOf(r.score);
+    document.getElementById('tierTag').innerHTML = '<span class="tag '+t.cls+'">'+t.label+'</span>';
+    document.getElementById('matchedAddr').textContent = '匹配：' + addrText;
+    var tb = document.getElementById('breakTable');
+    tb.innerHTML = '<tr><th>因子</th><th>计数</th><th>加减分</th></tr>';
+    r.parts.forEach(function(p){
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>'+p[0]+'</td><td>'+p[1]+'</td><td>'+fmtDelta(p[2])+'</td>';
+      tb.appendChild(tr);
+    });
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td><b>基础分</b></td><td></td><td>50</td>';
+    tb.insertBefore(tr, tb.children[1]);
+    var tr2 = document.createElement('tr');
+    tr2.innerHTML = '<td><b>总分</b></td><td></td><td><b>'+r.score+'</b></td>';
+    tb.appendChild(tr2);
+    resultEl.classList.add('show');
+  }
+
+  function searchAround(center, type, keywords){
+    return new Promise(function(resolve, reject){
+      var ps = new AMap.PlaceSearch({
+        city: '郑州',
+        citylimit: true,
+        type: type || '',
+        pageSize: 25,
+        pageIndex: 1,
+        extensions: 'base'
+      });
+      ps.searchNearBy(keywords || '', center, 500, function(status, result){
+        if (status === 'complete' && result && result.poiList){
+          resolve(result.poiList.pois || []);
+        } else if (status === 'no_data'){
+          resolve([]);
+        } else {
+          var info = (result && (result.info || result.message)) || status || '周边检索失败';
+          reject(new Error(String(info)));
+        }
+      });
+    });
+  }
+
+  function isJinshui(regeocodeOrPoi){
+    var district = '';
+    var adcode = '';
+    var address = '';
+    if (regeocodeOrPoi.addressComponent){
+      var ac = regeocodeOrPoi.addressComponent;
+      district = ac.district || ac.township || '';
+      adcode = String(ac.adcode || '');
+      address = (regeocodeOrPoi.formattedAddress || '') + district;
+    } else {
+      district = regeocodeOrPoi.adname || regeocodeOrPoi.district || '';
+      adcode = String(regeocodeOrPoi.adcode || '');
+      address = (regeocodeOrPoi.address || '') + (regeocodeOrPoi.name || '') + district;
+    }
+    if (adcode.indexOf('410105') === 0) return true;
+    if (district.indexOf('金水') >= 0) return true;
+    if (address.indexOf('金水') >= 0) return true;
+    return false;
+  }
+
+  function geocode(query){
+    return new Promise(function(resolve, reject){
+      var geocoder = new AMap.Geocoder({city: '郑州市', citylimit: true});
+      geocoder.getLocation(query, function(status, result){
+        if (status === 'complete' && result && result.geocodes && result.geocodes.length){
+          resolve({kind:'geocode', list: result.geocodes});
+          return;
+        }
+        var ps = new AMap.PlaceSearch({city:'郑州', citylimit:true, pageSize:10, pageIndex:1});
+        ps.search(query, function(st2, res2){
+          if (st2 === 'complete' && res2 && res2.poiList && res2.poiList.pois && res2.poiList.pois.length){
+            resolve({kind:'poi', list: res2.poiList.pois});
+          } else if (st2 === 'no_data' || (status === 'no_data')){
+            reject(new Error('未找到该地址，请换个金水区地点再试'));
+          } else {
+            var info = (res2 && (res2.info || res2.message)) || (result && (result.info || result.message)) || st2 || status || '定位失败';
+            reject(new Error(String(info)));
+          }
+        });
+      });
+    });
+  }
+
+  function pickJinshui(payload){
+    var list = payload.list || [];
+    for (var i = 0; i < list.length; i++){
+      var item = list[i];
+      if (payload.kind === 'geocode'){
+        var loc = item.location;
+        var addr = item.formattedAddress || item.address || '';
+        var ac = item.addressComponent || {};
+        var fake = {
+          addressComponent: ac,
+          formattedAddress: addr,
+          adname: ac.district,
+          adcode: ac.adcode
+        };
+        if (isJinshui(fake) || addr.indexOf('金水') >= 0){
+          return {
+            lng: loc.lng, lat: loc.lat,
+            name: addr,
+            center: [loc.lng, loc.lat]
+          };
+        }
+      } else {
+        if (isJinshui(item)){
+          var loc2 = item.location;
+          return {
+            lng: loc2.lng, lat: loc2.lat,
+            name: (item.name || '') + (item.address ? '（'+item.address+'）' : ''),
+            center: [loc2.lng, loc2.lat]
+          };
+        }
+      }
+    }
+    return null;
+  }
+
+  function showMap(center){
+    mapEl.style.display = 'block';
+    if (!map){
+      map = new AMap.Map('map', {zoom: 15, center: center, viewMode: '2D'});
+    } else {
+      map.setCenter(center);
+    }
+    if (marker) marker.setMap(null);
+    marker = new AMap.Marker({position: center, map: map});
+  }
+
+  function rivalCount(pois){
+    var brands = ['茶百道','沪上阿姨','霸王茶姬','喜茶','书亦'];
+    var seen = {};
+    var n = 0;
+    (pois || []).forEach(function(p){
+      var name = p.name || '';
+      var id = p.id || (name + '|' + (p.location && (p.location.lng+','+p.location.lat)));
+      if (seen[id]) return;
+      for (var i = 0; i < brands.length; i++){
+        if (name.indexOf(brands[i]) >= 0){
+          seen[id] = 1;
+          n++;
+          break;
+        }
+      }
+    });
+    return n;
+  }
+
+  function mixueCount(pois){
+    var n = 0;
+    (pois || []).forEach(function(p){
+      var name = p.name || '';
+      if (name.indexOf('蜜雪') >= 0) n++;
+    });
+    return n;
+  }
+
+  async function scoreAddress(){
+    var q = (input.value || '').trim();
+    if (!q){ setStatus('请输入金水区地址或地点名', true); return; }
+    if (typeof AMap === 'undefined'){
+      setStatus('高德地图脚本未加载，请检查网络或 Key 配置', true); return;
+    }
+    btn.disabled = true;
+    resultEl.classList.remove('show');
+    setStatus('定位中…');
+    try {
+      var payload = await geocode(q.indexOf('郑州') >= 0 ? q : ('郑州金水区' + q));
+      var picked = pickJinshui(payload);
+      if (!picked){
+        setStatus('该位置不在郑州金水区，已拒绝打分。请输入金水区内地址。', true);
+        btn.disabled = false;
+        return;
+      }
+      setStatus('检索周边设施（500米）…');
+      var center = picked.center;
+      showMap(center);
+
+      var tasks = [
+        searchAround(center, '141200', ''),
+        searchAround(center, '120000', ''),
+        searchAround(center, '120200', ''),
+        searchAround(center, '060700', ''),
+        searchAround(center, '150500', ''),
+        searchAround(center, '060100', ''),
+        searchAround(center, '', '蜜雪冰城'),
+        searchAround(center, '', '茶百道'),
+        searchAround(center, '', '沪上阿姨'),
+        searchAround(center, '', '霸王茶姬'),
+        searchAround(center, '', '喜茶'),
+        searchAround(center, '', '书亦烧仙草')
+      ];
+      var results = await Promise.all(tasks);
+      var counts = {
+        school: results[0].length,
+        residential: results[1].length,
+        office: results[2].length,
+        market: results[3].length,
+        metro: results[4].length,
+        mall: results[5].length,
+        mixue: mixueCount(results[6]),
+        rival: rivalCount([].concat(results[7], results[8], results[9], results[10], results[11]))
+      };
+      showResult(picked.name, counts);
+      setStatus('打分完成（周边统计受单页约25条上限影响，仅供参考）');
+    } catch (e){
+      var msg = (e && e.message) ? e.message : String(e);
+      if (/INVALID_USER_KEY|USERKEY_PLAT_NOMATCH|INVALID_USER_SCODE|USERKEY_PLAT/i.test(msg)){
+        setStatus('高德 Key / 平台或域名白名单未生效（'+msg+'）。请到控制台核对 Web端(JS API) Key 与安全密钥、域名 dannywang0822.github.io', true);
+      } else if (/DAILY_QUERY_OVER_LIMIT|OVER_LIMIT|CUQPS_HAS_EXCEEDED|配额/i.test(msg)){
+        setStatus('高德调用配额已用尽，请稍后再试', true);
+      } else if (/NETWORK|timeout|Failed to fetch|网络/i.test(msg)){
+        setStatus('网络异常，请稍后重试', true);
+      } else {
+        setStatus('打分失败：' + msg, true);
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  btn.addEventListener('click', scoreAddress);
+  input.addEventListener('keydown', function(ev){
+    if (ev.key === 'Enter') scoreAddress();
+  });
+})();
+</script>
 </body>
 </html>
