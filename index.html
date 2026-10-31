@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>郑州奶茶店选址工具 · 逻辑与验证进展（2026-10-27）</title>
+<title>郑州奶茶店选址工具 · v0.2 多因子打分</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#f4f1ec;color:#222;font:15px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
@@ -45,36 +45,56 @@ th{background:#faf6f1;font-weight:600;white-space:nowrap}
 #map{width:100%;height:180px;border-radius:10px;margin-top:10px;background:#eee;display:none}
 footer{text-align:center;color:#999;font-size:13px;padding:10px 0 34px}
 footer p{margin:4px 0}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.chips label{border:1px solid #ddd;border-radius:16px;padding:4px 10px;font-size:13.5px;cursor:pointer;white-space:nowrap}
+.chips input{display:none}
+.chips label.on{background:#8a4b1f;color:#fff;border-color:#8a4b1f}
+.gA{background:#2e8b57}.gB{background:#d4a017}.gC{background:#c0392b}
+.tw{overflow-x:auto}
+.disc{background:#fff6e8;border-radius:8px;padding:8px 10px;font-size:13px;color:#8a4b1f;margin:8px 0}
 </style>
 <script>window._AMapSecurityConfig={securityJsCode:"91a7e2c9fa3313873b5531a5dde273a8"};</script>
 <script src="https://webapi.amap.com/maps?v=2.0&key=39abf1fcc05cf446e4466a623fc19c62&plugin=AMap.Geocoder,AMap.PlaceSearch"></script>
 </head>
 <body>
 <header>
-<h1>郑州奶茶店选址工具 · 逻辑与验证进展（2026-10-27）</h1>
-<p>当前阶段：逻辑梳理和验证</p>
+<h1>郑州奶茶店选址工具 · v0.2 多因子打分</h1>
+<p>试点：郑州金水区、管城区 · 规则 v0.2（15 因子，分档位权重）</p>
 </header>
 <main>
 
 <section class="card tool" id="score-tool">
-<h2>金水区地址打分</h2>
-<p class="hint">输入金水区某个位置 → 按蜜雪冰城平价档 v0.1 打分（限定郑州金水区；周边 500 米；同品牌按「周边蜜雪数量」统计）</p>
+<h2>地址打分（v0.2）</h2>
+<p class="hint">选区域和品牌/档位，输入该区内的地址或地点名。每次打分约调用高德 17 次（串行，需 10–20 秒）。</p>
+<div class="chips" id="distChips"></div>
+<div class="chips" id="brandChips"></div>
 <div class="row">
-<input type="text" id="addr" placeholder="例如：郑州金水区花园路某某路口" autocomplete="off">
+<input type="text" id="addr" placeholder="例如：郑州金水区花园路" autocomplete="off">
 <button type="button" id="btn">开始打分</button>
 </div>
+<div class="disc">分数表示这个位置像不像品牌会选的地方，不代表盈利；喜茶样本少，结论不稳。</div>
 <div class="status info" id="status"></div>
 <div class="result" id="result">
-<div class="scoreline">
-<span class="num" id="scoreNum">—</span>
-<span id="tierTag"></span>
-</div>
+<div class="scoreline"><span class="num" id="scoreNum">—</span><span id="gradeTag"></span><span class="note" id="tierInfo"></span></div>
 <p class="note" id="matchedAddr"></p>
-<table class="break" id="breakTable">
-<tr><th>因子</th><th>计数</th><th>加减分</th></tr>
-</table>
+<div class="tw"><table class="break" id="breakTable"></table></div>
 <div id="map"></div>
 </div>
+</section>
+
+<section class="card">
+<h2>v0.2 规则摘要</h2>
+<p>每个因子按半径统计高德周边 POI 数量 → 按档位分档得 level（0–3）→ 因子得分 = 权重 × level / 3；总分 = 各因子得分之和 + 同品牌饱和扣分，截断到 0–100。</p>
+<p>同品牌（500m 内）：≤1 家 0；2–3 家 −5；≥4 家 −10。竞品 = 除本品牌外其他茶饮品牌 500m 内门店数。</p>
+<table><tr><th>档位</th><th>品牌</th><th>A推荐</th><th>B可考虑</th><th>C谨慎</th></tr><tr><td>平价</td><td>蜜雪冰城</td><td>≥60</td><td>38–59</td><td>&lt;38</td></tr><tr><td>中端</td><td>茶百道、沪上阿姨</td><td>≥60</td><td>41–59</td><td>&lt;41</td></tr><tr><td>中高端</td><td>霸王茶姬、喜茶</td><td>≥60</td><td>39–59</td><td>&lt;39</td></tr></table>
+<div class="tw"><table><tr><th>因子</th><th>半径</th><th>平价</th><th>中端</th><th>中高端</th></tr><tr><td>商圈热度·餐饮</td><td>300m</td><td>14.3</td><td>13.6</td><td>11.4</td></tr><tr><td>商圈热度·零售</td><td>300m</td><td>12.5</td><td>11.6</td><td>10.2</td></tr><tr><td>步行街/商业街/夜市</td><td>500m</td><td>2.7</td><td>1.4</td><td>4.4</td></tr><tr><td>休闲娱乐(人流)</td><td>500m</td><td>8.8</td><td>10.9</td><td>9.6</td></tr><tr><td>中小学</td><td>500m</td><td>5.8</td><td>4.4</td><td>2.8</td></tr><tr><td>高校</td><td>1000m</td><td>5.0</td><td>2.9</td><td>2.3</td></tr><tr><td>医院</td><td>500m</td><td>5.0</td><td>5.5</td><td>5.9</td></tr><tr><td>写字楼/办公</td><td>500m</td><td>6.0</td><td>9.2</td><td>9.5</td></tr><tr><td>商场/购物中心</td><td>500m</td><td>5.0</td><td>8.4</td><td>8.7</td></tr><tr><td>住宅小区</td><td>500m</td><td>7.1</td><td>3.4</td><td>5.6</td></tr><tr><td>菜市场/综合市场</td><td>500m</td><td>7.3</td><td>2.8</td><td>2.6</td></tr><tr><td>地铁站</td><td>500m</td><td>3.4</td><td>3.3</td><td>6.5</td></tr><tr><td>公交站</td><td>300m</td><td>8.2</td><td>5.8</td><td>4.8</td></tr><tr><td>竞品茶饮(他牌)</td><td>500m</td><td>0.4</td><td>8.7</td><td>7.9</td></tr><tr><td>酒店宾馆</td><td>500m</td><td>8.4</td><td>8.3</td><td>7.8</td></tr></table></div>
+<p class="note">权重为满分（level=3）时的得分。</p>
+</section>
+
+<section class="card">
+<h2>v0.2 留出验证</h2>
+<div class="tw"><table><tr><th>档位</th><th>AUC</th><th>v0.1同集</th><th>均分 门店/对照</th><th>A级 门店/对照</th><th>样本</th></tr><tr><td>平价</td><td>0.777</td><td>0.688</td><td>50.8 / 27.6</td><td>43% / 6%</td><td>14/33</td></tr><tr><td>中端</td><td>0.867</td><td>0.761</td><td>63.0 / 26.5</td><td>46% / 6%</td><td>24/33</td></tr><tr><td>中高端</td><td>0.909</td><td>0.684</td><td>56.4 / 24.8</td><td>14% / 0%</td><td>14/33</td></tr></table></div>
+<p class="note">样本仍小（每档 14–24 家门店 vs 33 个对照点），中高端含喜茶样本少，结论不稳。</p>
 </section>
 
 <section class="card">
@@ -96,7 +116,8 @@ footer p{margin:4px 0}
 </section>
 
 <section class="card">
-<h2><span>3</span>蜜雪冰城平价档 v0.1 打分规则</h2>
+<h2><span>3</span>【历史】蜜雪冰城平价档 v0.1 打分规则</h2>
+<p class="note">已被 v0.2 多因子规则取代，仅留作记录。</p>
 <p>基础分 <b>50</b>，最后夹到 0–100。以下均为 500 米范围内。</p>
 <table>
 <tr><th>因子</th><th>规则</th></tr>
@@ -117,7 +138,7 @@ footer p{margin:4px 0}
 </section>
 
 <section class="card">
-<h2><span>4</span>验证结果（金水区，留出验证）</h2>
+<h2><span>4</span>【历史】v0.1 验证结果（金水区，留出验证）</h2>
 <p>30家未参与定权重的真实蜜雪门店 vs 30个“建成区但300米内无蜜雪”的随机对照点。</p>
 <div class="big">
 <div><b>0.76</b><small>AUC<br>（0.5纯猜，1完美，误差约±0.07）</small></div>
@@ -157,359 +178,77 @@ footer p{margin:4px 0}
 <li>扩到茶百道、沪上阿姨及其他区</li>
 </ul>
 </section>
-
 </main>
 <footer>
 <p>自用研究，数据仅供参考</p>
 <p>打分实时调用高德，结果仅供参考</p>
 </footer>
-
 <script>
+var RULES={"version":"0.2","city":"郑州","districts":["金水区","管城区"],"data_source":"高德POI周边计数(仅规则,不含原始POI)","score_range":[0,100],"how_to_score":"对每个因子按半径查高德周边POI数量count→落入分档取level(0-3)→该因子得分=weight×level/3；总分=Σ因子得分 + 同品牌饱和扣分，截断到0-100。竞品为除本品牌外8个茶饮品牌500m内门店数。","factors":{"food300":{"label":"商圈热度·餐饮","radius_m":300},"shop300":{"label":"商圈热度·零售","radius_m":300},"street":{"label":"步行街/商业街/夜市","radius_m":500},"ent":{"label":"休闲娱乐(人流)","radius_m":500},"sch":{"label":"中小学","radius_m":500},"univ":{"label":"高校","radius_m":1000},"hosp":{"label":"医院","radius_m":500},"off":{"label":"写字楼/办公","radius_m":500},"mall":{"label":"商场/购物中心","radius_m":500},"res":{"label":"住宅小区","radius_m":500},"mkt":{"label":"菜市场/综合市场","radius_m":500},"metro":{"label":"地铁站","radius_m":500},"bus":{"label":"公交站","radius_m":300},"comp":{"label":"竞品茶饮(他牌)","radius_m":500},"hotel":{"label":"酒店宾馆","radius_m":500}},"tiers":{"平价":{"brands":["蜜雪冰城"],"factor_weights":{"food300":14.3,"shop300":12.5,"ent":8.8,"hotel":8.4,"bus":8.2,"mkt":7.3,"res":7.1,"off":6.0,"sch":5.8,"univ":5.0,"hosp":5.0,"mall":5.0,"metro":3.4,"street":2.7,"comp":0.4},"bins_upper_exclusive_thresholds":{"food300":[21,52,88],"shop300":[19,62,98],"street":[0,1,2],"ent":[12,24,36],"sch":[3,5,6],"univ":[0,5,6],"hosp":[3,7,8],"off":[3,8,9],"mall":[0,1,2],"res":[8,21,22],"mkt":[6,19,20],"metro":[0,4,5],"bus":[2,3,4],"comp":[1,2,3],"hotel":[10,25,28]},"bin_rule":"count<=th[0]→0; <=th[1]→1; <=th[2]→2; >th[2]→3","same_brand_penalty":{"<=1":0,"2-3":-5,">=4":-10},"grade_thresholds":{"A推荐":60,"B可考虑":38,"C谨慎":0}},"中端":{"brands":["茶百道","沪上阿姨"],"factor_weights":{"food300":13.6,"shop300":11.6,"ent":10.9,"off":9.2,"comp":8.7,"mall":8.4,"hotel":8.3,"bus":5.8,"hosp":5.5,"sch":4.4,"res":3.4,"metro":3.3,"univ":2.9,"mkt":2.8,"street":1.4},"bins_upper_exclusive_thresholds":{"food300":[21,52,120],"shop300":[19,62,116],"street":[0,1,2],"ent":[12,24,40],"sch":[3,5,6],"univ":[0,5,6],"hosp":[3,7,8],"off":[3,8,12],"mall":[0,1,2],"res":[8,21,22],"mkt":[6,19,20],"metro":[0,4,5],"bus":[2,3,4],"comp":[1,2,3],"hotel":[10,25,30]},"bin_rule":"count<=th[0]→0; <=th[1]→1; <=th[2]→2; >th[2]→3","same_brand_penalty":{"<=1":0,"2-3":-5,">=4":-10},"grade_thresholds":{"A推荐":60,"B可考虑":41,"C谨慎":0}},"中高端":{"brands":["霸王茶姬","喜茶"],"factor_weights":{"food300":11.4,"shop300":10.2,"ent":9.6,"off":9.5,"mall":8.7,"comp":7.9,"hotel":7.8,"metro":6.5,"hosp":5.9,"res":5.6,"bus":4.8,"street":4.4,"sch":2.8,"mkt":2.6,"univ":2.3},"bins_upper_exclusive_thresholds":{"food300":[21,52,184],"shop300":[19,62,198],"street":[0,1,2],"ent":[12,24,92],"sch":[3,5,6],"univ":[0,5,6],"hosp":[3,7,8],"off":[3,8,22],"mall":[0,1,3],"res":[8,21,22],"mkt":[6,19,20],"metro":[0,4,5],"bus":[2,3,4],"comp":[1,2,4],"hotel":[10,25,49]},"bin_rule":"count<=th[0]→0; <=th[1]→1; <=th[2]→2; >th[2]→3","same_brand_penalty":{"<=1":0,"2-3":-5,">=4":-10},"grade_thresholds":{"A推荐":60,"B可考虑":39,"C谨慎":0}}},"brand_tier":{"蜜雪冰城":"平价","茶百道":"中端","沪上阿姨":"中端","霸王茶姬":"中高端","喜茶":"中高端"},"validation":{"平价":{"holdout_auc":0.777,"n_test_store":14,"n_test_control":33,"store_mean":50.8,"control_mean":27.6,"hit_rate_A":0.43,"control_in_A":0.06},"中端":{"holdout_auc":0.867,"n_test_store":24,"n_test_control":33,"store_mean":63.0,"control_mean":26.5,"hit_rate_A":0.46,"control_in_A":0.06},"中高端":{"holdout_auc":0.909,"n_test_store":14,"n_test_control":33,"store_mean":56.4,"control_mean":24.8,"hit_rate_A":0.14,"control_in_A":0.0},"v0.1_same_holdout_auc":{"平价":0.688,"中端":0.761,"中高端":0.684},"logistic_ref_cv5_auc":{"平价":0.805,"中端":0.925,"中高端":0.967}},"notes":{}};
 (function(){
-  var btn = document.getElementById('btn');
-  var input = document.getElementById('addr');
-  var statusEl = document.getElementById('status');
-  var resultEl = document.getElementById('result');
-  var mapEl = document.getElementById('map');
-  var map = null;
-  var marker = null;
-
-  function setStatus(msg, isErr){
-    statusEl.textContent = msg || '';
-    statusEl.className = 'status ' + (isErr ? 'err' : 'info');
-  }
-  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
-  function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
-  function errInfo(result, status){
-    if (result == null) return String(status || '未知错误');
-    if (typeof result === 'string') return result;
-    if (typeof result === 'object'){
-      return String(result.info || result.message || result.infocode || status || 'error');
-    }
-    return String(status || 'error');
-  }
-  function isQps(msg){
-    return /CUQPS_HAS_EXCEEDED|OVER_LIMIT|QPS|并发|频率/i.test(String(msg||''));
-  }
-
-  function tierOf(score){
-    if (score >= 85) return {label:'优先考虑', cls:'g1'};
-    if (score >= 70) return {label:'可谈', cls:'g2'};
-    if (score >= 55) return {label:'谨慎', cls:'g3'};
-    return {label:'不建议', cls:'g4'};
-  }
-  function schoolDelta(n){
-    if (n <= 0) return 0;
-    if (n <= 5) return 10;
-    if (n <= 10) return 18;
-    return 25;
-  }
-  function mixueDelta(n){
-    if (n <= 1) return 0;
-    if (n <= 3) return -4;
-    if (n <= 5) return -8;
-    return -12;
-  }
-  function rivalDelta(n){
-    if (n <= 0) return 0;
-    if (n <= 3) return 5;
-    if (n <= 6) return 0;
-    return -10;
-  }
-
-  function computeScore(c){
-    var parts = [];
-    var score = 50;
-    var s = schoolDelta(c.school);
-    score += s; parts.push(['学校', c.school, s]);
-
-    var denseR = c.residential >= 10;
-    var denseO = c.office >= 10;
-    var denseM = c.market >= 10;
-    var denseness = 0;
-    if (denseR) denseness += 8;
-    if (denseO) denseness += 4;
-    if (denseM) denseness += 3;
-    denseness = Math.min(15, denseness);
-    if (!denseR && !denseO && !denseM) denseness = -5;
-    var densLabel = (denseR?'住宅密 ':'') + (denseO?'写字楼密 ':'') + (denseM?'菜市场密 ':'');
-    if (!denseR && !denseO && !denseM) densLabel = '三项都疏';
-    score += denseness;
-    parts.push(['住宅/写字楼/菜市场 (' + densLabel.trim() + ')',
-      '住'+c.residential+'/写'+c.office+'/菜'+c.market, denseness]);
-
-    var metro = c.metro > 0 ? 8 : 0;
-    score += metro; parts.push(['地铁站', c.metro, metro]);
-    var mall = c.mall > 0 ? 5 : 0;
-    score += mall; parts.push(['商场', c.mall, mall]);
-
-    var mx = mixueDelta(c.mixue);
-    score += mx; parts.push(['同品牌（周边蜜雪数量）', c.mixue, mx]);
-    var rv = rivalDelta(c.rival);
-    score += rv; parts.push(['竞品合计', c.rival, rv]);
-
-    score = clamp(score, 0, 100);
-    return {score: score, parts: parts};
-  }
-
-  function fmtDelta(d){
-    if (d > 0) return '+' + d;
-    return String(d);
-  }
-
-  function showResult(addrText, counts){
-    var r = computeScore(counts);
-    document.getElementById('scoreNum').textContent = r.score;
-    var t = tierOf(r.score);
-    document.getElementById('tierTag').innerHTML = '<span class="tag '+t.cls+'">'+t.label+'</span>';
-    document.getElementById('matchedAddr').textContent = '匹配：' + addrText;
-    var tb = document.getElementById('breakTable');
-    tb.innerHTML = '<tr><th>因子</th><th>计数</th><th>加减分</th></tr>';
-    var tr0 = document.createElement('tr');
-    tr0.innerHTML = '<td><b>基础分</b></td><td></td><td>50</td>';
-    tb.appendChild(tr0);
-    r.parts.forEach(function(p){
-      var tr = document.createElement('tr');
-      tr.innerHTML = '<td>'+p[0]+'</td><td>'+p[1]+'</td><td>'+fmtDelta(p[2])+'</td>';
-      tb.appendChild(tr);
-    });
-    var tr2 = document.createElement('tr');
-    tr2.innerHTML = '<td><b>总分</b></td><td></td><td><b>'+r.score+'</b></td>';
-    tb.appendChild(tr2);
-    resultEl.classList.add('show');
-  }
-
-  function searchAroundOnce(center, type, keywords){
-    return new Promise(function(resolve, reject){
-      var ps = new AMap.PlaceSearch({
-        city: '郑州',
-        citylimit: true,
-        type: type || '',
-        pageSize: 25,
-        pageIndex: 1,
-        extensions: 'base'
-      });
-      ps.searchNearBy(keywords || '', center, 500, function(status, result){
-        if (status === 'complete' && result && result.poiList){
-          resolve(result.poiList.pois || []);
-        } else if (status === 'no_data'){
-          resolve([]);
-        } else {
-          reject(new Error(errInfo(result, status)));
-        }
-      });
-    });
-  }
-
-  async function searchAround(center, type, keywords, label){
-    var last = null;
-    for (var attempt = 0; attempt < 4; attempt++){
-      try {
-        if (attempt) await sleep(400 * attempt);
-        return await searchAroundOnce(center, type, keywords);
-      } catch (e){
-        last = e;
-        if (!isQps(e && e.message) || attempt === 3) throw e;
-        setStatus('接口繁忙，重试中…（' + (label || '') + '）');
-      }
-    }
-    throw last || new Error('周边检索失败');
-  }
-
-  function isJinshui(obj){
-    var district = '';
-    var adcode = '';
-    var address = '';
-    if (!obj) return false;
-    if (obj.addressComponent){
-      var ac = obj.addressComponent;
-      district = ac.district || '';
-      adcode = String(ac.adcode || '');
-      address = (obj.formattedAddress || '') + district;
-    } else {
-      district = obj.adname || obj.district || '';
-      adcode = String(obj.adcode || '');
-      address = (obj.formattedAddress || obj.address || '') + (obj.name || '') + district;
-    }
-    if (adcode.indexOf('410105') === 0) return true;
-    if (district.indexOf('金水') >= 0) return true;
-    if (address.indexOf('金水') >= 0) return true;
-    return false;
-  }
-
-  function geocode(query){
-    return new Promise(function(resolve, reject){
-      var geocoder = new AMap.Geocoder({city: '郑州市', citylimit: true});
-      geocoder.getLocation(query, function(status, result){
-        if (status === 'complete' && result && result.geocodes && result.geocodes.length){
-          resolve({kind:'geocode', list: result.geocodes});
-          return;
-        }
-        var ps = new AMap.PlaceSearch({city:'郑州', citylimit:true, pageSize:10, pageIndex:1});
-        ps.search(query, function(st2, res2){
-          if (st2 === 'complete' && res2 && res2.poiList && res2.poiList.pois && res2.poiList.pois.length){
-            resolve({kind:'poi', list: res2.poiList.pois});
-          } else if (st2 === 'no_data' || status === 'no_data'){
-            reject(new Error('未找到该地址，请换个金水区地点再试'));
-          } else {
-            reject(new Error(errInfo(res2, st2) || errInfo(result, status) || '定位失败'));
-          }
-        });
-      });
-    });
-  }
-
-  function pickJinshui(payload){
-    var list = payload.list || [];
-    for (var i = 0; i < list.length; i++){
-      var item = list[i];
-      if (payload.kind === 'geocode'){
-        var loc = item.location;
-        if (!loc) continue;
-        var addr = item.formattedAddress || item.address || '';
-        var ac = item.addressComponent || {};
-        // AMap may put district on the geocode itself
-        if (!ac.district && item.district) ac.district = item.district;
-        if (!ac.adcode && item.adcode) ac.adcode = item.adcode;
-        var fake = {
-          addressComponent: ac,
-          formattedAddress: addr,
-          district: ac.district || item.district,
-          adcode: ac.adcode || item.adcode
-        };
-        if (isJinshui(fake) || addr.indexOf('金水') >= 0){
-          return {
-            name: addr,
-            center: [loc.lng, loc.lat]
-          };
-        }
-      } else {
-        if (isJinshui(item) && item.location){
-          return {
-            name: (item.name || '') + (item.address ? '（'+item.address+'）' : ''),
-            center: [item.location.lng, item.location.lat]
-          };
-        }
-      }
-    }
-    return null;
-  }
-
-  function showMap(center){
-    mapEl.style.display = 'block';
-    if (!map){
-      map = new AMap.Map('map', {zoom: 15, center: center, viewMode: '2D'});
-    } else {
-      map.setCenter(center);
-    }
-    if (marker) marker.setMap(null);
-    marker = new AMap.Marker({position: center, map: map});
-  }
-
-  function rivalCount(pois){
-    var brands = ['茶百道','沪上阿姨','霸王茶姬','喜茶','书亦'];
-    var seen = {};
-    var n = 0;
-    (pois || []).forEach(function(p){
-      var name = p.name || '';
-      var id = p.id || (name + '|' + (p.location && (p.location.lng+','+p.location.lat)));
-      if (seen[id]) return;
-      for (var i = 0; i < brands.length; i++){
-        if (name.indexOf(brands[i]) >= 0){
-          seen[id] = 1;
-          n++;
-          break;
-        }
-      }
-    });
-    return n;
-  }
-
-  function mixueCount(pois){
-    var n = 0;
-    (pois || []).forEach(function(p){
-      if ((p.name || '').indexOf('蜜雪') >= 0) n++;
-    });
-    return n;
-  }
-
-  async function runAround(center){
-    // Sequential to stay under free-tier QPS
-    var school = await searchAround(center, '141200', '', '学校');
-    await sleep(180);
-    var residential = await searchAround(center, '120000', '', '住宅');
-    await sleep(180);
-    var office = await searchAround(center, '120200', '', '写字楼');
-    await sleep(180);
-    var market = await searchAround(center, '060700', '', '菜市场');
-    await sleep(180);
-    var metro = await searchAround(center, '150500', '', '地铁');
-    await sleep(180);
-    var mall = await searchAround(center, '060100', '', '商场');
-    await sleep(180);
-    var mixue = await searchAround(center, '', '蜜雪冰城', '同品牌');
-    await sleep(180);
-    var rivals = [];
-    var brands = ['茶百道','沪上阿姨','霸王茶姬','喜茶','书亦烧仙草'];
-    for (var i = 0; i < brands.length; i++){
-      var part = await searchAround(center, '', brands[i], brands[i]);
-      rivals = rivals.concat(part);
-      await sleep(180);
-    }
-    return {
-      school: school.length,
-      residential: residential.length,
-      office: office.length,
-      market: market.length,
-      metro: metro.length,
-      mall: mall.length,
-      mixue: mixueCount(mixue),
-      rival: rivalCount(rivals)
-    };
-  }
-
-  async function scoreAddress(){
-    var q = (input.value || '').trim();
-    if (!q){ setStatus('请输入金水区地址或地点名', true); return; }
-    if (typeof AMap === 'undefined'){
-      setStatus('高德地图脚本未加载，请检查网络或 Key 配置', true); return;
-    }
-    btn.disabled = true;
-    resultEl.classList.remove('show');
-    setStatus('定位中…');
-    try {
-      var payload = await geocode(q.indexOf('郑州') >= 0 ? q : ('郑州金水区' + q));
-      var picked = pickJinshui(payload);
-      if (!picked){
-        setStatus('该位置不在郑州金水区，已拒绝打分。请输入金水区内地址。', true);
-        return;
-      }
-      setStatus('检索周边设施（500米）…');
-      showMap(picked.center);
-      var counts = await runAround(picked.center);
-      showResult(picked.name, counts);
-      setStatus('打分完成（周边统计受单页约25条上限影响，仅供参考）');
-    } catch (e){
-      var msg = (e && e.message) ? e.message : String(e);
-      if (/INVALID_USER_KEY|USERKEY_PLAT_NOMATCH|INVALID_USER_SCODE|USERKEY_PLAT/i.test(msg)){
-        setStatus('高德 Key / 平台或域名白名单未生效（'+msg+'）。请到控制台核对 Web端(JS API) Key 与安全密钥、域名 dannywang0822.github.io', true);
-      } else if (isQps(msg) || /DAILY_QUERY_OVER_LIMIT|配额/i.test(msg)){
-        setStatus('高德调用过于频繁或配额已用尽，请稍后再试（'+msg+'）', true);
-      } else if (/NETWORK|timeout|Failed to fetch|网络/i.test(msg)){
-        setStatus('网络异常，请稍后重试', true);
-      } else {
-        setStatus('打分失败：' + msg, true);
-      }
-    } finally {
-      btn.disabled = false;
-    }
-  }
-
-  btn.addEventListener('click', scoreAddress);
-  input.addEventListener('keydown', function(ev){
-    if (ev.key === 'Enter') scoreAddress();
-  });
+var DIST={'金水区':'410105','管城区':'410104'};
+// 因子 → 高德 POI 类型（JSON 未给出类型码，此处为本页约定）
+var FT={food300:'050000',shop300:'060000',street:'061000',ent:'080000',sch:'141202|141203',univ:'141201',hosp:'090100|090200',off:'120200',mall:'060100',res:'120300',mkt:'060700',metro:'150500',bus:'150700',hotel:'100000'};
+var TEA=['蜜雪冰城','茶百道','沪上阿姨','霸王茶姬','喜茶','书亦烧仙草','古茗','奈雪的茶','CoCo都可'];
+var TEAKEY={'书亦烧仙草':'书亦','奈雪的茶':'奈雪','CoCo都可':'CoCo'};
+var $=function(i){return document.getElementById(i)};
+var btn=$('btn'),input=$('addr'),statusEl=$('status'),resultEl=$('result'),mapEl=$('map'),map=null,marker=null;
+var sel={dist:'金水区',pick:'brand:蜜雪冰城'};
+function chips(el,items,key){el.innerHTML='';items.forEach(function(it){var l=document.createElement('label');l.textContent=it[1];l.dataset.v=it[0];if(sel[key]===it[0])l.className='on';l.onclick=function(){sel[key]=it[0];[].forEach.call(el.children,function(c){c.className=c.dataset.v===sel[key]?'on':''});if(key==='dist')input.placeholder='例如：郑州'+sel.dist+(sel.dist==='金水区'?'花园路':'紫荆山路');};el.appendChild(l);});}
+chips($('distChips'),[['金水区','金水区'],['管城区','管城区']],'dist');
+var bi=Object.keys(RULES.brand_tier).map(function(b){return['brand:'+b,b+'（'+RULES.brand_tier[b]+'）']});
+Object.keys(RULES.tiers).forEach(function(t){bi.push(['tier:'+t,t+'档（不指定品牌）'])});
+chips($('brandChips'),bi,'pick');
+function setStatus(m,e){statusEl.textContent=m||'';statusEl.className='status '+(e?'err':'info')}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+function errInfo(r,s){if(r==null)return String(s||'未知错误');if(typeof r==='string')return r;return String(r.info||r.message||r.infocode||s||'error')}
+function isQps(m){return /CUQPS|OVER_LIMIT|QPS|并发|频率/i.test(String(m||''))}
+function has(name,b){return name.indexOf(TEAKEY[b]||b)>=0}
+function nearOnce(c,type,kw,r){return new Promise(function(res,rej){var ps=new AMap.PlaceSearch({city:'郑州',citylimit:true,type:type||'',pageSize:25,pageIndex:1,extensions:'base'});ps.searchNearBy(kw||'',c,r,function(s,x){if(s==='complete'&&x&&x.poiList)res({count:+x.poiList.count||0,pois:x.poiList.pois||[]});else if(s==='no_data')res({count:0,pois:[]});else rej(new Error(errInfo(x,s)))})})}
+async function near(c,type,kw,r,label){for(var a=0;a<5;a++){try{if(a)await sleep(600*a);return await nearOnce(c,type,kw,r)}catch(e){if(!isQps(e.message)||a===4)throw e;setStatus('接口繁忙，重试中…（'+label+'）')}}}
+function inDist(o,d){var code=String(o.adcode||'');if(code)return code.indexOf(DIST[d])===0;return String(o.district||o.adname||'').indexOf(d)>=0}
+function geocode(q,d){return new Promise(function(res,rej){new AMap.Geocoder({city:'郑州市'}).getLocation(q,function(s,r){if(s==='complete'&&r.geocodes&&r.geocodes.length){var g=r.geocodes,ok=g.filter(function(x){return inDist(x,d)})[0];if(ok)return res({name:ok.formattedAddress,center:[ok.location.lng,ok.location.lat]});return res({reject:(g[0].district||'其他区域')})}
+new AMap.PlaceSearch({city:'郑州',citylimit:true,pageSize:10}).search(q,function(s2,r2){if(s2==='complete'&&r2.poiList&&r2.poiList.pois.length){var p=r2.poiList.pois,ok=p.filter(function(x){return inDist(x,d)})[0];if(ok)return res({name:ok.name+(ok.address?'（'+ok.address+'）':''),center:[ok.location.lng,ok.location.lat]});return res({reject:p[0].adname||'其他区域'})}if(s2==='no_data'||s==='no_data')return rej(new Error('未找到该地址，请换个'+d+'地点再试'));rej(new Error(errInfo(r2,s2)))})})})}
+function level(n,th){return n<=th[0]?0:n<=th[1]?1:n<=th[2]?2:3}
+function penalty(n){return n<=1?0:n<=3?-5:-10}
+function r1(x){return Math.round(x*10)/10}
+async function scoreAddress(){
+var q=(input.value||'').trim(),d=sel.dist;if(!q){setStatus('请输入'+d+'地址或地点名',true);return}
+if(typeof AMap==='undefined'){setStatus('高德地图脚本未加载，请检查网络或 Key 配置',true);return}
+var pk=sel.pick.split(':'),brand=pk[0]==='brand'?pk[1]:null,tier=brand?RULES.brand_tier[brand]:pk[1],T=RULES.tiers[tier];
+btn.disabled=true;resultEl.classList.remove('show');setStatus('定位中…');
+try{
+var g=await geocode(q.indexOf('郑州')>=0?q:('郑州'+d+q),d);
+if(g.reject){setStatus('该位置不在郑州'+d+'（识别为'+g.reject+'），已拒绝打分。请输入'+d+'内地址，或切换区域。',true);return}
+showMap(g.center);
+var counts={},keys=Object.keys(RULES.factors),i=0;
+for(var k of keys){i++;setStatus('检索周边设施 '+i+'/'+(keys.length+1)+'（'+RULES.factors[k].label+'）…');var rad=RULES.factors[k].radius_m;
+if(k==='comp'){var others=TEA.filter(function(b){return b!==brand&&!(brand===null&&false)});if(!brand)others=TEA.filter(function(b){return T.brands.indexOf(b)<0});var x=await near(g.center,'050000',others.map(function(b){return TEAKEY[b]||b}).join('|'),rad,'竞品');var seen={};counts.comp=x.pois.filter(function(p){var n=p.name||'';if(seen[p.id])return false;seen[p.id]=1;return others.some(function(b){return has(n,b)})}).length;}
+else{counts[k]=(await near(g.center,FT[k],'',rad,RULES.factors[k].label)).count}
+await sleep(250)}
+var same=null;
+if(brand){setStatus('检索同品牌门店…');var sx=await near(g.center,'050000',TEAKEY[brand]||brand,500,'同品牌');same=sx.pois.filter(function(p){return has(p.name||'',brand)}).length}
+render(g.name,d,brand,tier,T,counts,same);setStatus('打分完成');
+}catch(e){var m=e&&e.message?e.message:String(e);
+if(/INVALID_USER_KEY|USERKEY_PLAT|INVALID_USER_SCODE/i.test(m))setStatus('高德 Key / 域名白名单未生效（'+m+'），请到控制台核对',true);
+else if(isQps(m)||/DAILY_QUERY_OVER_LIMIT|配额/i.test(m))setStatus('高德调用过于频繁或配额已用尽，请稍后再试（'+m+'）',true);
+else setStatus('打分失败：'+m,true)}
+finally{btn.disabled=false}}
+function render(name,d,brand,tier,T,c,same){
+var rows='<tr><th>因子</th><th>半径</th><th>计数</th><th>档</th><th>得分/权重</th></tr>',tot=0;
+Object.keys(T.factor_weights).forEach(function(k){var w=T.factor_weights[k],lv=level(c[k],T.bins_upper_exclusive_thresholds[k]),s=w*lv/3;tot+=s;rows+='<tr><td>'+RULES.factors[k].label+'</td><td>'+RULES.factors[k].radius_m+'m</td><td>'+c[k]+'</td><td>'+lv+'</td><td>'+r1(s)+' / '+w+'</td></tr>'});
+var pen=same==null?0:penalty(same);
+rows+='<tr><td>同品牌饱和扣分</td><td>500m</td><td>'+(same==null?'—':same)+'</td><td></td><td>'+(same==null?'未指定品牌':pen)+'</td></tr>';
+var score=Math.max(0,Math.min(100,Math.round(tot+pen)));
+rows+='<tr><td><b>总分</b></td><td></td><td></td><td></td><td><b>'+score+'</b></td></tr>';
+var gt=T.grade_thresholds,gr=score>=gt['A推荐']?['A 推荐','gA']:score>=gt['B可考虑']?['B 可考虑','gB']:['C 谨慎','gC'];
+$('scoreNum').textContent=score;$('gradeTag').innerHTML='<span class="tag '+gr[1]+'">'+gr[0]+'</span>';
+$('tierInfo').textContent=(brand?brand+' · ':'')+tier+'档';
+$('matchedAddr').textContent='匹配：'+name+'（'+d+'）';$('breakTable').innerHTML=rows;resultEl.classList.add('show')}
+function showMap(c){mapEl.style.display='block';if(!map)map=new AMap.Map('map',{zoom:15,center:c});else map.setCenter(c);if(marker)marker.setMap(null);marker=new AMap.Marker({position:c,map:map})}
+btn.addEventListener('click',scoreAddress);input.addEventListener('keydown',function(e){if(e.key==='Enter')scoreAddress()});
 })();
 </script>
 </body>
+
 </html>
